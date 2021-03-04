@@ -1,0 +1,395 @@
+Function HydraulicRadius(a As Double, b As Double, ccddd As String, e As String)
+' This function outputs the hydraulic radius for a shape of a by c along a dip/dipdirection ccddd, based on the e side
+    Dim DipFace As Double
+    
+    'Get dip for the face
+    DipFace = Dip(ccddd)
+
+    'For the crown use cos of dip
+    If e = "Crown" Then
+        HydraulicRadius = a * b / (2 * (a + b)) / Cos(DipFace / 180 * WorksheetFunction.Pi())
+    
+    'For all 4 other faces, use sin
+    ElseIf e = "HW" Or e = "FW" Or e = "WW" Or e = "EW" Then
+        HydraulicRadius = a * b / (2 * (a + b)) / Sin(DipFace / 180 * WorksheetFunction.Pi())
+    
+    'if any other input, return message to verify input
+    Else
+        HydraulicRadius = "Verify shape."
+    End If
+    
+    
+    
+End Function
+Function Dip(ccddd As String)
+'Input XX/YYY returns YYY as number
+    Dip = CDbl(Left(ccddd, 2))
+End Function
+Function Direction(ccddd As String)
+'Input XX/YYY returns XX as number
+    Direction = CDbl(Right(ccddd, 3))
+End Function
+Function BFactor(face As String, Sets As String)
+'Returns B factor for given face and given joint set, face as cc/ddd and sets as ee/fff;...
+
+'Initialize Bmin with max possible value
+Bmin = 1
+
+'basic check if sets is ok
+If Len(Sets) Mod 7 <> 0 Or Len(Sets) = 0 Then
+    'if there is an obvious issue, return a warning
+    BFactor = "revise sets value"
+End If
+
+'Get dip and dip direction of face analysed
+DipFace = Dip(face)
+DirectionFace = Dip(face)
+
+'how many sets will be tested
+NumberOfSets = Len(Sets) / 7
+
+'for all sets
+For i = 1 To NumberOfSets
+    'get dip of set
+    Dipi = Dip(Mid(Sets, (i - 1) * 7 + 1, 2))
+    
+    'get direction of set
+    Directioni = Direction(Mid(Sets, (i - 1) * 7 + 4, 3))
+    
+    'get angle between face and set
+    Angle = AngleAlpha(DipFace, DirectionFace, Dipi, Directioni)
+    
+    'convert angle to B value
+    BV = AAtoBV(Angle)
+    
+    'keep worst B value
+    Bmin = WorksheetFunction.Min(Bmin, BV)
+    
+Next i
+
+'return worst B value
+BFactor = Bmin
+
+End Function
+Function AngleAlpha(DipF, DirectionF, Dipi, Directioni)
+    'source: https://minewiki.engineering.queensu.ca/mediawiki/index.php/Stability_Graph_Method
+    
+    'converts dips and directions to trends and plunges, all in radians
+    trendf = WorksheetFunction.Radians(DirectionF + 180)
+    plungef = WorksheetFunction.Radians(90 - DipF)
+    trendi = WorksheetFunction.Radians(Directioni + 180)
+    plungei = WorksheetFunction.Radians(90 - Dipi)
+    
+    'Finds coordodinates N,E,D for both planes
+    Nf = Cos(trendf) * Cos(plungef)
+    Ef = Sin(trendf) * Cos(plungef)
+    Df = Sin(plungef)
+    Ni = Cos(trendi) * Cos(plungei)
+    Ei = Sin(trendi) * Cos(plungei)
+    Di = Sin(plungei)
+    
+    'Finds angle between the two lines, linear algebra
+    AngleAlphaTemp = WorksheetFunction.Degrees(WorksheetFunction.Acos(Nf * Ni + Ef * Ei + Df * Di))
+    
+    'since we need the smaller angle,
+    'if angle is smaller then 90,
+    If AngleAlphaTemp <= 90 Then
+        'return unchanged value
+        AngleAlpha = AngleAlphaTemp
+    'if >90
+    Else
+        'return the corrected angle
+        AngleAlpha = 180 - AngleAlphaTemp
+    End If
+End Function
+Function AAtoBV(AA)
+'Converts alpha angle to B value
+'https://minewiki.engineering.queensu.ca/mediawiki/images/9/98/Joint_Orientation_Factor_B.PNG
+
+If AA >= 0 And AA <= 10 Then
+    AAtoBV = 0.3 - AA * 0.01
+ElseIf AA >= 10 And AA <= 30 Then
+    AAtoBV = 0.2
+ElseIf AA >= 30 And AA <= 60 Then
+    AAtoBV = 0.2 + (AA - 30) * 0.6 / 30
+Else
+    AAtoBV = 0.8 + (AA - 60) * 0.2 / 30
+End If
+
+End Function
+Function CFactor(face As String, Sets As String, Optional isFW As Boolean)
+'Returns C factor for given face and given joint set, add True is FW
+
+'Gravity&Slabbing
+'Footwall is 8 as best case
+If isFW Then
+    CFactor = 8
+
+'for other faces
+Else
+    'dip of face in radians
+    DipF = WorksheetFunction.Radians(Dip(face))
+    
+    'from dip to C value
+    'https://minewiki.engineering.queensu.ca/mediawiki/images/6/67/Gravity_Adjustment_Factor_C.png
+    CMin = 8 - 6 * Cos(DipF)
+
+'Sliding
+
+
+'basic check if sets is ok
+If Len(Sets) Mod 7 <> 0 Or Len(Sets) = 0 Then
+    'if there is an obvious issue, return a warning
+    CFactor = "revise sets value"
+End If
+
+'how many sets will be tested
+NumberOfSets = Len(Sets) / 7
+
+
+For i = 1 To NumberOfSets
+    Dipi = Dip(Mid(Sets, (i - 1) * 7 + 1, 2))
+    If Dipi <= 30 Then
+        CMini = 8
+    Else
+        CMini = 8 - (Dipi - 30) * 6 / 60
+    End If
+    
+    'keep worst value
+    CMin = WorksheetFunction.Min(CMin, CMini)
+Next i
+
+'Return CMin
+CFactor = CMin
+
+End If
+
+
+End Function
+Function AFactor(Litho As String, UCS As Double, level As Double, face As String, facedipdipdir As String, height As Double, span As Double, strike As Double)
+'Source Matthew, 1980
+'Assumptions and simplifications:
+'sigma3 is vertical
+'sigma1 is along strike
+'sigma2 is orthogonal
+
+'sigmainduced
+sigmavertical = LevelToDepth(level) * 0.027
+sigmah1 = LevelToDepth(level) * 0.04
+sigmah2 = LevelToDepth(level) * 0.03
+
+Dim ratio As Double
+Dim k As Double
+Dim ucssigmaI As Double
+
+'If in paste, M-P does not really apply, A=1
+If Litho = "Paste" Then
+    AFactor = 1
+    
+'For the HW & FW
+ElseIf face = "HW" Or face = "FW" Then
+    k = sigmah2 / sigmah1
+    ratio = strike / span
+    
+    Interpo = InterpolateMajor(ratio, k)
+    
+    ucssigmaI = UCS / (Interpo * sigmah1)
+    AFactor = ucssigmaItoA(ucssigmaI)
+
+'For sidewalls
+ElseIf face = "WW" Or face = "EW" Then
+    k = sigmah2 / sigmah1
+    ratio = strike / span
+    
+    ucssigmaI = UCS / (InterpolateMinor(ratio, k) * sigmah1)
+    AFactor = ucssigmaItoA(ucssigmaI)
+
+'For the back
+Else
+    k = sigmah2 / sigmavertical
+    HeightCorr = height / Sin(WorksheetFunction.Radians(Dip(facedipdipdir)))
+    ratio = HeightCorr / span
+    
+    Interpo = InterpolateMinor(ratio, k)
+    
+'    sigmaI1 = Interpo * sigmavertical
+    
+    ucssigmaI = UCS / (Interpo * sigmavertical)
+    AFactor = ucssigmaItoA(ucssigmaI)
+    
+'    Interpo = InterpolateMajor(ratio, k)
+'    sigmaI2 = Interpo * sigmavertical
+'
+'    ucssigmaI = UCS / WorksheetFunction.Max(sigmaI1, sigmaI2)
+'
+''    ucssigmaI = UCS / (InterpolateMajor(ratio, k) * sigmavertical)
+''    AFactor2 = ucssigmaItoA(ucssigmaI)
+'     AFactor = ucssigmaItoA(ucssigmaI)
+''    AFactor = WorksheetFunction.Min(AFactor1, AFactor2)
+    
+End If
+End Function
+
+Function LevelToDepth(level As Double)
+'Function to return depth of a level from a level name
+LevelToDepth = level
+End Function
+
+Function InterpolateMinor(ratio As Double, k As Double)
+'Function to return induced sigma
+
+'Sloppy
+
+'Improvements:
+'Replace while loops by matches
+
+
+'Will find the right column
+i = 2
+While Worksheets("A factor").Cells(22, i).Value < k And i <= 8
+    i = i + 1
+Wend
+
+'Finds the right row
+j = 23
+While Worksheets("A factor").Cells(j, 1).Value < ratio And j <= 48
+    j = j + 1
+Wend
+
+'Gets all 4 corners of interpolation
+TopL = Worksheets("A factor").Cells(j, i).Value
+TopR = Worksheets("A factor").Cells(j, i + 1).Value
+BottomL = Worksheets("A factor").Cells(j + 1, i).Value
+BottomR = Worksheets("A factor").Cells(j + 1, i + 1).Value
+KL = Worksheets("A factor").Cells(22, i).Value
+KR = Worksheets("A factor").Cells(22, i + 1).Value
+RatioT = Worksheets("A factor").Cells(j, 1).Value
+RatioB = Worksheets("A factor").Cells(j + 1, 1).Value
+
+
+'interpolates Left / Right
+Top = TopL + (TopR - TopL) / (KR - KL) * (k - KL)
+Bottom = BottomL + (BottomR - BottomL) / (KR - KL) * (k - KL)
+
+'interpolates top down
+AVG = Top + (Bottom - Top) / (RatioB - RatioT) * (ratio - RatioT)
+
+'InterpolateMinor = WorksheetFunction.Max(AVG, 0.0001)
+InterpolateMinor = AVG
+
+End Function
+Function ucssigmaItoA(ucssigmaI As Double)
+
+If ucssigmaI <= 2 Then
+    ucssigmaItoA = 0.1
+ElseIf ucssigmaI <= 10 Then
+    ucssigmaItoA = 0.1 + 0.9 * (ucssigmaI - 2) / 8
+Else
+    ucssigmaItoA = 1
+End If
+
+End Function
+Function InterpolateMajor(ratio As Double, k As Double)
+'Function to return induced sigma
+
+'Sloppy
+
+'Improvements:
+'Replace while loops by matches
+
+
+'Will find the right column
+i = 2
+While Worksheets("A factor").Cells(55, i).Value < k And i <= 5
+    i = i + 1
+Wend
+
+'Finds the right row
+j = 56
+While Worksheets("A factor").Cells(j, 1).Value < ratio And j <= 81
+    j = j + 1
+Wend
+
+'Gets all 4 corners of interpolation
+TopL = Worksheets("A factor").Cells(j, i).Value
+TopR = Worksheets("A factor").Cells(j, i + 1).Value
+BottomL = Worksheets("A factor").Cells(j + 1, i).Value
+BottomR = Worksheets("A factor").Cells(j + 1, i + 1).Value
+KL = Worksheets("A factor").Cells(22, i).Value
+KR = Worksheets("A factor").Cells(22, i + 1).Value
+RatioT = Worksheets("A factor").Cells(j, 1).Value
+RatioB = Worksheets("A factor").Cells(j + 1, 1).Value
+
+
+'interpolates Left / Right
+Top = TopL + (TopR - TopL) / (KR - KL) * (k - KL)
+Bottom = BottomL + (BottomR - BottomL) / (KR - KL) * (k - KL)
+
+'interpolates top down
+AVG = Top + (Bottom - Top) / (RatioB - RatioT) * (ratio - RatioT)
+
+'Returns the interpolated value
+InterpolateMajor = AVG
+
+End Function
+Function lens(stope As String)
+Dim first As String
+Dim second As String
+first = WorksheetFunction.Find("-", stope)
+second = WorksheetFunction.Find("-", stope, first + 1)
+lens = Mid(stope, first + 1, second - first - 1)
+End Function
+Function bin(elos As Double)
+    'converts the elos to a bin value as per M-P
+    If elos < 0.5 Then
+        bin = "<0.5"
+    ElseIf elos < 1 Then
+        bin = "<1"
+    ElseIf elos < 2 Then
+        bin = "<2"
+    ElseIf elos < 4 Then
+        bin = "<4"
+    ElseIf elos >= 4 Then
+        bin = ">4"
+    Else
+        bin = ""
+    End If
+End Function
+Function ELOSSeries(hr As Range, n As Range, elos As Range, bin As String)
+    
+    'Sloppy
+    'Slow
+    'But functional
+    
+    'Required improvements:
+        'No need for duplicate values
+        'Use merge two ranges into one array from start
+    
+    Dim i As Integer
+    Dim arrayNELOS() As Double
+    Dim cellsCount As Integer
+    cellsCount = elos.Cells.Count
+    arraysize = WorksheetFunction.CountIfs(elos, "=" & bin)
+    
+    If arraysize = 0 Then
+        ELOSSeries = ""
+    Else
+    
+    ReDim arrayNELOS(arraysize - 1, 1)
+    counter = 0
+        
+    For i = 1 To cellsCount
+        temp = elos.Item(i).Value
+        If elos.Item(i).Value = bin Then
+            arrayNELOS(counter, 0) = hr.Item(i).Value
+            
+            arrayNELOS(counter, 1) = n.Item(i).Value
+            counter = counter + 1
+        End If
+    Next i
+    
+    
+    
+    ELOSSeries = arrayNELOS
+    End If
+End Function
