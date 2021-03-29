@@ -174,9 +174,9 @@ Function AFactor(Litho As String, UCS As Double, level As Double, face As String
 'sigma2 is orthogonal
 
 'sigmainduced
-sigmavertical = LevelToDepth(level) * 0.027
-sigmah1 = LevelToDepth(level) * 0.04
-sigmah2 = LevelToDepth(level) * 0.03
+sigmavertical = LevelToDepth(level) * 0.0214
+sigmah1 = LevelToDepth(level) * 0.0437
+sigmah2 = LevelToDepth(level) * 0.0299
 
 Dim ratio As Double
 Dim k As Double
@@ -212,20 +212,9 @@ Else
     
     Interpo = InterpolateMinor(ratio, k)
     
-'    sigmaI1 = Interpo * sigmavertical
-    
     ucssigmaI = UCS / (Interpo * sigmavertical)
     AFactor = ucssigmaItoA(ucssigmaI)
     
-'    Interpo = InterpolateMajor(ratio, k)
-'    sigmaI2 = Interpo * sigmavertical
-'
-'    ucssigmaI = UCS / WorksheetFunction.Max(sigmaI1, sigmaI2)
-'
-''    ucssigmaI = UCS / (InterpolateMajor(ratio, k) * sigmavertical)
-''    AFactor2 = ucssigmaItoA(ucssigmaI)
-'     AFactor = ucssigmaItoA(ucssigmaI)
-''    AFactor = WorksheetFunction.Min(AFactor1, AFactor2)
     
 End If
 End Function
@@ -379,17 +368,67 @@ Function ELOSSeries(hr As Range, n As Range, elos As Range, bin As String)
     counter = 0
         
     For i = 1 To cellsCount
-        temp = elos.Item(i).Value
-        If elos.Item(i).Value = bin Then
-            arrayNELOS(counter, 0) = hr.Item(i).Value
+'        temp = elos.Item(i).Value
+'        If elos.Item(i).Value <> CVErr(xlErrNA) Then
+
+        If elos.item(i).Value = bin Then
+            arrayNELOS(counter, 0) = hr.item(i).Value
             
-            arrayNELOS(counter, 1) = n.Item(i).Value
+            arrayNELOS(counter, 1) = n.item(i).Value
             counter = counter + 1
         End If
+'        End If
     Next i
     
     
-    
+
     ELOSSeries = arrayNELOS
     End If
 End Function
+
+Function ELOSSeries2(hr As Range, n As Range, elos As Range, bin As String)
+    
+    'Sloppy
+    'Slow
+    'But functional
+    
+    'Required improvements:
+        'No need for duplicate values
+        'Use merge two ranges into one array from start
+    
+    Dim i As Integer
+    Dim arrayNELOS() As Double
+    Dim cellsCount As Integer
+    cellsCount = elos.Cells.Count
+    arraysize = WorksheetFunction.CountIfs(elos, "=" & bin)
+        
+    
+    If arraysize = 0 Then
+        ELOSSeries2 = ""
+    Else
+    
+    ReDim arrayNELOS(arraysize - 1, 1)
+    counter = 0
+        
+    
+    LastCell = 1
+    
+    Offset = hr.item(1).Row - 1
+    
+    For i = 1 To arraysize
+        currentrow = elos.Find(What:=bin, After:=elos.item(LastCell), LookIn:=xlValues, LookAt _
+            :=xlWhole, SearchOrder:=xlByRows).Row
+        arrayNELOS(counter, 0) = hr.Cells(currentrow - Offset, 1).Value
+        arrayNELOS(counter, 1) = n.Cells(currentrow - Offset, 1).Value
+        
+        MsgBox (currentrow)
+        
+        counter = counter + 1
+        LastCell = currentrow
+    Next i
+    
+
+    ELOSSeries2 = arrayNELOS
+    End If
+End Function
+
